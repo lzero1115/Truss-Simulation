@@ -21,5 +21,7 @@ This project simulates the deformation of a grid truss structure.
 
 ## External force
 <img src="images/external_force.png" alt="img1" width="600"/>   
+
+
 ## Self weight
 <img src="images/self_weight.png" alt="img2" width="600"/>  
