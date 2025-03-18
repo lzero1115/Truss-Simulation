@@ -94,7 +94,7 @@ def callback():
     if (psim.Button("Compute truss deformation")):
         help = not help
 
-    scaled_vl = 50*np.linalg.norm(ps_force_vec)
+    #scaled_vl = np.linalg.norm(ps_force_vec)
 
     changed_view, show_deformed = psim.Checkbox("Show Deformed", show_deformed)
     if changed_view:
@@ -102,7 +102,6 @@ def callback():
         ps_mesh_deformed.set_enabled(show_deformed)
         ps_force_pt.set_enabled(show_deformed)
         ps_force_pt.add_vector_quantity("single point force", ps_force_vec.reshape(1, 3),
-                                        length=scaled_vl,
                                         radius=0.005, enabled=show_deformed,
                                         color=(1.0, 0, 0))
 
@@ -123,7 +122,7 @@ def main():
     global ps_mesh_static, ps_mesh_deformed, truss, c_id, ps_force_pt, ps_force_vec
     # create the truss structure
 
-    nx, ny, nz = 3, 3, 3
+    nx, ny, nz = 3, 3, 1
 
     fixed_nodes = []
     for k in range(nz):
@@ -135,12 +134,14 @@ def main():
     for k in range(nz):
         for j in range(ny):
             for i in range(nx-1): # x-direction
+
                 node1 = i + j*nx + k*nx*ny
                 node2 = (i+1) + j*nx + k*nx*ny
                 design_edges.append((node1,node2))
 
             if j < ny-1: # y direction
                 for i in range(nx):
+                    
                     node1 = i + j * nx + k * nx * ny
                     node2 = i + (j+1) * nx + k * nx * ny
                     design_edges.append((node1,node2))
@@ -155,16 +156,16 @@ def main():
 
     # Add diagonal bracing (optional)
     # Diagonal edges in xy planes
-    # for k in range(nz):
-    #     for j in range(ny - 1):
-    #         for i in range(nx - 1):
-    #             node1 = i + j * nx + k * nx * ny
-    #             node2 = (i + 1) + (j + 1) * nx + k * nx * ny
-    #             design_edges.append((node1, node2))
-    #
-    #             node1 = (i + 1) + j * nx + k * nx * ny
-    #             node2 = i + (j + 1) * nx + k * nx * ny
-    #             design_edges.append((node1, node2))
+    for k in range(nz):
+        for j in range(ny - 1):
+            for i in range(nx - 1):
+                node1 = i + j * nx + k * nx * ny
+                node2 = (i + 1) + (j + 1) * nx + k * nx * ny
+                design_edges.append((node1, node2))
+
+                node1 = (i + 1) + j * nx + k * nx * ny
+                node2 = i + (j + 1) * nx + k * nx * ny
+                design_edges.append((node1, node2))
 
     # Diagonal edges in xz planes
     # for j in range(ny):
