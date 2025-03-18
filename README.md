@@ -20,14 +20,14 @@ This project simulates the deformation of a grid truss structure.
 2. After configuring the settings, press the **"Compute Truss Deformation"** button to compute the deformation of the truss under the applied force.
 
 ## External force
-<img src="images/external_force.png" alt="img1" width="600"/>   
+<img src="images/external_force.png" alt="img1" width="800"/>   
 
 
 ## Self weight
-<img src="images/self_weight.png" alt="img2" width="600"/>  
+<img src="images/self_weight.png" alt="img2" width="800"/>  
 
 ## Topology Optimization
-1. SDP_check.py and SDP_visualization.py require installing [mosek](https://docs.mosek.com/latest/pythonfusion/index.html).
-2. knitro_pnc.py and knitro_pnc_binary.py require installing [knitro](https://www.artelys.com/solvers/knitro/).  
-3. scip-sdp-generate.py is for generating .dat-s file to be solved by [SCIP-SDP](http://www.opt.tu-darmstadt.de/scipsdp/).
+1. **SDP_check.py** and **SDP_visualization.py** require installing [mosek](https://docs.mosek.com/latest/pythonfusion/index.html).
+2. **knitro_pnc.py** and **knitro_pnc_binary.py** require installing [knitro](https://www.artelys.com/solvers/knitro/).  
+3. **scip-sdp-generate.py** is for generating .dat-s file to be solved by [SCIP-SDP](http://www.opt.tu-darmstadt.de/scipsdp/).
 <img src="images/topo_opt.png" alt="img3" width="800"/>   
