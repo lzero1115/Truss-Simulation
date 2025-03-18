@@ -1,6 +1,6 @@
-# Grid Truss Structure Simulation
+# Truss Structure Simulation
 
-This project simulates the deformation of a grid truss structure.
+This python project provides the mechanical simulation of grid truss structure, which solves $Kd = f$ and supports 6 DoFs for each node containing stretching, torsion and bending.
 
 ## Setup and Configuration
 
@@ -26,7 +26,8 @@ This project simulates the deformation of a grid truss structure.
 ## Self weight
 <img src="images/self_weight.png" alt="img2" width="800"/>  
 
-## Topology Optimization
+## Topology Optimization (Minimal Compliance)
+
 1. **SDP_check.py** and **SDP_visualization.py** require installing [mosek](https://docs.mosek.com/latest/pythonfusion/index.html).
 2. **knitro_pnc.py** and **knitro_pnc_binary.py** require installing [knitro](https://www.artelys.com/solvers/knitro/).  
 3. **scip-sdp-generate.py** is for generating .dat-s file to be solved by [SCIP-SDP](http://www.opt.tu-darmstadt.de/scipsdp/).
