@@ -42,7 +42,7 @@ class TrussStructure:
         #consider self weight
         self.consider_selfweight = False
 
-        # Material properties
+        # Material properties which can be manually defined
         self.E = 5e6  # Pa
         self.G = 46071428.57142857  # Pa
         self.rho = 58.0  # kg/m^3
@@ -59,6 +59,7 @@ class TrussStructure:
         self.nodes: List[np.ndarray] = []
         self.edges: List[Tuple[int, int]] = []
 
+        # include virtual bars with the same order of edges
         self.bars: List[Bar] = []
         self.bars_elastic: List[BarLinearElastic] = []
         self.vertex_dof_indices: List[List[int]] = []
@@ -68,10 +69,55 @@ class TrussStructure:
         self.initialize_grid_structure()
         self.initialize_structure()
 
+        # DoF mapping variables
+        self.map_dof_entire2subset: Dict[int, int] = {}
+        self.map_dof_subset2entire: Dict[int, int] = {}
+        self.total_dofs: int = 0
+        # Initialize DoF mapping
+        self._initialize_dof_mapping()
+
+    def _initialize_dof_mapping(self) -> None:
+        """Initialize the DoF mapping for the structure."""
+        self.map_dof_entire2subset.clear()
+        self.map_dof_subset2entire.clear()
+        self.total_dofs = self._compute_dofs_mapping()
+
     def get_node_index(self, i: int, j: int, k: int) -> int:
         """Convert 3D grid coordinates to node index."""
         return i + j * self.nx + k * self.nx * self.ny
 
+    # def initialize_grid_structure(self):
+    #     """Initialize nodes and edges for the grid structure."""
+    #     # Create nodes
+    #     for k in range(self.nz):
+    #         for j in range(self.ny):
+    #             for i in range(self.nx):
+    #                 self.nodes.append(np.array([float(i), float(j), float(k)]))
+    #
+    #     def add_edge(i1: int, j1: int, k1: int, i2: int, j2: int, k2: int):
+    #         if (0 <= i1 < self.nx and 0 <= j1 < self.ny and 0 <= k1 < self.nz and
+    #                 0 <= i2 < self.nx and 0 <= j2 < self.ny and 0 <= k2 < self.nz):
+    #             n1 = self.get_node_index(i1, j1, k1)
+    #             n2 = self.get_node_index(i2, j2, k2)
+    #             if n1 != n2:
+    #                 self.edges.append((min(n1, n2), max(n1, n2)))
+    #
+    #     # Create base grid edges (only square frame)
+    #     for k in range(self.nz):
+    #         for j in range(self.ny):
+    #             for i in range(self.nx):
+    #                 if i < self.nx - 1:
+    #                     add_edge(i, j, k, i + 1, j, k)
+    #                 if j < self.ny - 1:
+    #                     add_edge(i, j, k, i, j + 1, k)
+    #                 if k < self.nz - 1:
+    #                     add_edge(i, j, k, i, j, k + 1)
+    #
+    #     # Add design edges if not already present
+    #     existing_edges_set = set(self.edges)
+    #     for e in self.design_edges_set:
+    #         if e not in existing_edges_set:
+    #             self.edges.append(e)
     def initialize_grid_structure(self):
         """Initialize nodes and edges for the grid structure."""
         # Create nodes
@@ -80,26 +126,36 @@ class TrussStructure:
                 for i in range(self.nx):
                     self.nodes.append(np.array([float(i), float(j), float(k)]))
 
-        def add_edge(i1: int, j1: int, k1: int, i2: int, j2: int, k2: int):
-            if (0 <= i1 < self.nx and 0 <= j1 < self.ny and 0 <= k1 < self.nz and
-                    0 <= i2 < self.nx and 0 <= j2 < self.ny and 0 <= k2 < self.nz):
-                n1 = self.get_node_index(i1, j1, k1)
-                n2 = self.get_node_index(i2, j2, k2)
-                if n1 != n2:
-                    self.edges.append((min(n1, n2), max(n1, n2)))
+        # Clear any existing edges
+        self.edges = []
 
-        # Create base grid edges (only square frame)
+        # Create edges in a systematic order
+
+        # 1. First add all x-direction edges
         for k in range(self.nz):
             for j in range(self.ny):
-                for i in range(self.nx):
-                    if i < self.nx - 1:
-                        add_edge(i, j, k, i + 1, j, k)
-                    if j < self.ny - 1:
-                        add_edge(i, j, k, i, j + 1, k)
-                    if k < self.nz - 1:
-                        add_edge(i, j, k, i, j, k + 1)
+                for i in range(self.nx - 1):
+                    node1 = self.get_node_index(i, j, k)
+                    node2 = self.get_node_index(i + 1, j, k)
+                    self.edges.append((node1, node2))
 
-        # Add design edges if not already present
+        # 2. Then add all y-direction edges
+        for k in range(self.nz):
+            for j in range(self.ny - 1):
+                for i in range(self.nx):
+                    node1 = self.get_node_index(i, j, k)
+                    node2 = self.get_node_index(i, j + 1, k)
+                    self.edges.append((node1, node2))
+
+        # 3. Then add all z-direction edges (for 3D trusses)
+        for k in range(self.nz - 1):
+            for j in range(self.ny):
+                for i in range(self.nx):
+                    node1 = self.get_node_index(i, j, k)
+                    node2 = self.get_node_index(i, j, k + 1)
+                    self.edges.append((node1, node2))
+
+        # 4. Add any additional design edges if not already present
         existing_edges_set = set(self.edges)
         for e in self.design_edges_set:
             if e not in existing_edges_set:
@@ -148,40 +204,37 @@ class TrussStructure:
             self.edge_dof_indices.append(edge_dof)
 
     # core code
-    def _compute_dofs_mapping(self, map_entire2subset: Dict[int, int],
-                              map_subset2entire: Dict[int, int]) -> int:
+    def _compute_dofs_mapping(self) -> int:
         """Compute DoF mapping excluding fixed nodes."""
         new_dof = 0
         for dof in range(6 * len(self.nodes)):
             node_id = dof // 6
             if node_id not in self.fixed_nodes:
-                map_entire2subset[dof] = new_dof
-                map_subset2entire[new_dof] = dof
+                self.map_dof_entire2subset[dof] = new_dof
+                self.map_dof_subset2entire[new_dof] = dof
                 new_dof += 1
         return new_dof
 
-    def _compute_stiff_matrix(self, total_dofs: int,
-                              map_dof_entire2subset: Dict[int, int]) -> sparse.csr_matrix:
+    def _compute_stiff_matrix(self) -> sparse.csr_matrix:
         """Compute global stiffness matrix."""
         triplet_list = []
 
         for i, elastic_bar in enumerate(self.bars_elastic):
             k_G = elastic_bar.create_global_stiffness_matrix()
-            self._assemble_stiff_matrix(triplet_list, k_G, map_dof_entire2subset, i)
+            self._assemble_stiff_matrix(triplet_list, k_G, i)
 
         if triplet_list:
             rows, cols, data = zip(*triplet_list)
-            return sparse.csr_matrix((data, (rows, cols)), shape=(total_dofs, total_dofs))
-        return sparse.csr_matrix((total_dofs, total_dofs))
+            return sparse.csr_matrix((data, (rows, cols)), shape=(self.total_dofs, self.total_dofs))
+        return sparse.csr_matrix((self.total_dofs, self.total_dofs))
 
     def _assemble_stiff_matrix(self, K_tri: List[Tuple[int, int, float]],
-                               k_G: np.ndarray, map_dof_entire2subset: Dict[int, int],
-                               edge_id: int):
+                               k_G: np.ndarray, edge_id: int):
         """Assemble element stiffness matrix into global stiffness matrix."""
         new_dofs = [] # degenerate the fixed nodes degrees
         for j in range(len(self.edge_dof_indices[edge_id])):
             old_dof = self.edge_dof_indices[edge_id][j]
-            new_dofs.append(map_dof_entire2subset.get(old_dof, -1))
+            new_dofs.append(self.map_dof_entire2subset.get(old_dof, -1))
 
         for j in range(12):
             for k in range(12):
@@ -192,10 +245,9 @@ class TrussStructure:
                 if new_dof_j != -1 and new_dof_k != -1:
                     K_tri.append((new_dof_j, new_dof_k, float(k_G[j, k])))
 
-    def _compute_loads(self, tot_dofs: int, map_dof_entire2subset: Dict[int, int],
-                       external_forces: Optional[np.ndarray] = None) -> np.ndarray:
+    def _compute_loads(self, external_forces: Optional[np.ndarray] = None) -> np.ndarray:
         """Compute global load vector including self-weight for designed edges and external forces."""
-        F = np.zeros(tot_dofs)
+        F = np.zeros(self.total_dofs)
 
         # Get the set of designed edges for efficient lookup
         if self.consider_selfweight:
@@ -208,23 +260,22 @@ class TrussStructure:
 
                 if edge_norm in design_edges_set:  # Only consider designed edges for self-weight
                     load = self.bars_elastic[beam_id].create_global_self_weight()
-                    self._assembly_force(F, load, map_dof_entire2subset, beam_id)
+                    self._assembly_force(F, load, beam_id)
 
         # Add external forces if provided
         if external_forces is not None:
             for i in range(external_forces.shape[0]):
-                if i in map_dof_entire2subset:
-                    F[map_dof_entire2subset[i]] += external_forces[i]
+                if i in self.map_dof_entire2subset:
+                    F[self.map_dof_entire2subset[i]] += external_forces[i]
 
         return F
 
-    def _assembly_force(self, F: np.ndarray, g: np.ndarray,
-                        map_dof_entire2subset: Dict[int, int], edge_id: int):
+    def _assembly_force(self, F: np.ndarray, g: np.ndarray, edge_id: int):
         """Assemble element force vector into global force vector."""
         new_dofs = []
         for j in range(len(self.edge_dof_indices[edge_id])):
             old_dof = self.edge_dof_indices[edge_id][j]
-            new_dofs.append(map_dof_entire2subset.get(old_dof, -1))
+            new_dofs.append(self.map_dof_entire2subset.get(old_dof, -1))
 
         for j, new_dof in enumerate(new_dofs):
             if new_dof != -1:
@@ -233,22 +284,19 @@ class TrussStructure:
     def solve_elasticity(self, external_forces: Optional[np.ndarray] = None) -> Tuple[np.ndarray, bool, str]:
         """Solve elasticity problem for the truss structure."""
         try:
-            # Setup DoF mapping
-            map_dof_entire2subset = {}
-            map_dof_subset2entire = {}
-            total_dofs = self._compute_dofs_mapping(map_dof_entire2subset, map_dof_subset2entire)
+
 
             # Compute stiffness matrix and loads
-            K = self._compute_stiff_matrix(total_dofs, map_dof_entire2subset)
-            F = self._compute_loads(total_dofs, map_dof_entire2subset, external_forces)
+            K = self._compute_stiff_matrix()
+            F = self._compute_loads(external_forces)
 
             # Solve system
-            D = sparse.linalg.spsolve(K, F)
+            D = sparse.linalg.spsolve(K, F) # in projected constrained space
 
             # Map solution back to full system
             displacement = np.zeros(len(self.nodes) * 6)
             for i in range(D.shape[0]):
-                old_dof = map_dof_subset2entire[i]
+                old_dof = self.map_dof_subset2entire[i]
                 displacement[old_dof] = D[i]
 
             return displacement, True, "Success"
@@ -256,11 +304,14 @@ class TrussStructure:
             return np.zeros(len(self.nodes) * 6), False, f"Failed to solve: {str(e)}"
 
     def get_bar_volumes(self) -> List[float]:
-        """Calculate volumes of all bars."""
+        """Calculate volumes of the designed bars (excluding any bars not in the design)."""
         volumes = []
-        for bar in self.bars:
-            volume = bar.length_ * bar.section_.Ax_
-            volumes.append(volume)
+        for i, bar in enumerate(self.bars):
+            # Only consider bars that are part of the design (those with non-zero cross-sectional area)
+            if (
+            min(self.edges[i][0], self.edges[i][1]), max(self.edges[i][0], self.edges[i][1])) in self.design_edges_set:
+                volume = bar.length_ * bar.section_.Ax_  # Volume = length * area
+                volumes.append(volume)
         return volumes
 
     def get_total_volume(self) -> float:
@@ -285,10 +336,13 @@ class TrussStructure:
 
     def interpolate_polynomial(self, D_local: np.ndarray, L: float) -> List[np.ndarray]:
         """Interpolate displacement polynomial."""
-        #TODO: modification of corresponding sign later
+
+        # rotation angle around z axis already negative
+        # negative sign refers to the sign in bending stiffness matrix
         d_y = np.array([D_local[1], D_local[7], D_local[5], D_local[11]])
-        #d_z = np.array([D_local[2], D_local[8], D_local[4], D_local[10]])
+
         d_z = np.array([D_local[2], D_local[8], -D_local[4], -D_local[10]])
+
 
         A = np.zeros((4, 4))
         u0, u6 = D_local[0], D_local[6] + L
@@ -397,5 +451,130 @@ class TrussStructure:
 
         return colors
 
+    def get_bar_stiffness_matrix(self, edge_index: int) -> Tuple[sparse.csr_matrix, sparse.csr_matrix]:
+        """single bar contribution to the whole stiffness matrix"""
+        if edge_index < 0 or edge_index >= len(self.edges):
+            raise IndexError(f"Edge index {edge_index} is out of bounds")
 
+        # Get the bar and check if it's a designed bar
+        edge = self.edges[edge_index]
+        edge_norm = (min(edge[0], edge[1]), max(edge[0], edge[1]))
+        is_designed_bar = edge_norm in self.design_edges_set
 
+        # Get the actual bar's global stiffness matrix
+        elastic_bar = self.bars_elastic[edge_index]
+        k_G = elastic_bar.create_global_stiffness_matrix()
+
+        # Create empty triplet list for sparse matrix assembly
+        triplet_list_actual = []
+
+        # Map the DoFs for this bar
+        new_dofs = []
+        for j in range(len(self.edge_dof_indices[edge_index])):
+            old_dof = self.edge_dof_indices[edge_index][j]
+            new_dofs.append(self.map_dof_entire2subset.get(old_dof, -1))
+
+        # Assemble the triplets for actual bar
+        for j in range(12):
+            for k in range(12):
+                if abs(float(k_G[j, k])) < 1e-12:
+                    continue
+                new_dof_j = new_dofs[j]
+                new_dof_k = new_dofs[k]
+                if new_dof_j != -1 and new_dof_k != -1:
+                    triplet_list_actual.append((new_dof_j, new_dof_k, float(k_G[j, k])))
+
+        # Create sparse matrix for actual bar
+        k_actual = sparse.csr_matrix((self.total_dofs, self.total_dofs))
+        if triplet_list_actual:
+            rows, cols, data = zip(*triplet_list_actual)
+            k_actual = sparse.csr_matrix((data, (rows, cols)), shape=(self.total_dofs, self.total_dofs))
+
+        # If not a designed bar, return the same matrix twice (it's already minimum)
+        if not is_designed_bar:
+            return k_actual, k_actual
+
+        # For designed bars, create virtual bar with minimum section
+        start_node = self.nodes[edge[0]]
+        end_node = self.nodes[edge[1]]
+        coord = CoordinateSystem(origin=start_node, zaxis=end_node - start_node)
+        length = float(np.linalg.norm(end_node - start_node))
+        virtual_bar = Bar(coord, length, self.min_section)
+
+        # Create elastic bar with minimum section
+        virtual_material = BarMaterial(E=self.E, mu=self.mu, rho=self.rho, section=self.min_section)
+        virtual_elastic_bar = BarLinearElastic(virtual_bar, virtual_material)
+
+        # Get virtual bar's global stiffness matrix
+        k_G_virtual = virtual_elastic_bar.create_global_stiffness_matrix()
+
+        # Create empty triplet list for virtual bar
+        triplet_list_virtual = []
+
+        # Assemble the triplets for virtual bar
+        for j in range(12):
+            for k in range(12):
+                if abs(float(k_G_virtual[j, k])) < 1e-12:
+                    continue
+                new_dof_j = new_dofs[j]
+                new_dof_k = new_dofs[k]
+                if new_dof_j != -1 and new_dof_k != -1:
+                    triplet_list_virtual.append((new_dof_j, new_dof_k, float(k_G_virtual[j, k])))
+
+        # Create sparse matrix for virtual bar
+        k_virtual = sparse.csr_matrix((self.total_dofs, self.total_dofs))
+        if triplet_list_virtual:
+            rows, cols, data = zip(*triplet_list_virtual)
+            k_virtual = sparse.csr_matrix((data, (rows, cols)), shape=(self.total_dofs, self.total_dofs))
+
+        return k_actual, k_virtual
+
+    def update_bars_with_weight(self, rho: np.ndarray) -> None:
+        """
+        Topological optimization result...
+        Update the truss bars based on the solved rho values by creating new bars with updated cross-sectional areas.
+
+        Args:
+            rho: Optimized design variables (bar densities).
+        """
+        # Ensure rho is the same length as the number of bars
+        if len(rho) != len(self.edges):
+            raise ValueError("The length of rho does not match the number of edges (bars) in the structure.")
+
+        # Clear existing bars and bar elasticity lists
+        self.bars.clear()
+        self.bars_elastic.clear()
+
+        # Traverse edges and update the cross-sectional area of bars
+        for i, edge in enumerate(self.edges):
+            # Get the start and end nodes of the current edge (bar)
+            start_node = self.nodes[edge[0]]
+            end_node = self.nodes[edge[1]]
+
+            # If the bar is a designed bar (in the design edges set), update its cross-sectional area
+            if (min(edge[0], edge[1]), max(edge[0], edge[1])) in self.design_edges_set:
+                # Update the area based on rho, using the default design area
+                new_area = self.design_area * rho[i]  # Scale area by rho
+                section = BarCrossSectionRound(radius=np.sqrt(new_area / np.pi))
+            else:
+                # For undesigned bars, keep the original area (using the minimum section)
+                new_area = self.min_section.Ax_  # Unchanged for undesigned bars
+                section = self.min_section
+
+            # Create a new bar with the updated cross-section
+            length = float(np.linalg.norm(end_node - start_node))
+            coord = CoordinateSystem(origin=start_node, zaxis=end_node - start_node)
+
+            new_bar = Bar(coord, length, section)
+            self.bars.append(new_bar)
+
+            # Create a new BarMaterial for the updated bar
+            material = BarMaterial(E=self.E, mu=self.mu, rho=self.rho, section=new_bar.section_)
+            new_bar_elastic = BarLinearElastic(new_bar, material)
+
+            # Add the updated BarLinearElastic to the list of bars_elastic
+            self.bars_elastic.append(new_bar_elastic)
+
+            # Print updated area for verification (optional)
+            #print(f"Bar {i}: Updated area to {new_area:.4f} m^2")
+        print("Minimal compliance optimization update complete!")
