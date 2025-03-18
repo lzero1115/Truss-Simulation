@@ -1,6 +1,6 @@
 # Truss Structure Simulation
 
-This python project provides the mechanical simulation of grid truss structure, which solves $\textit{Kd = f}$ and supports 6 DoFs for each node containing stretching, torsion and bending.
+This python project provides the mechanical simulation of grid truss structure, which solves $\mathit{Kd = f}$ and supports 6 DoFs for each node containing stretching, torsion and bending.
 
 ## Setup and Configuration
 
