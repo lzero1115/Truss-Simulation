@@ -1,7 +1,6 @@
 import numpy as np
 from typing import List, Tuple, Dict, Optional, Set
 
-from mpmath import cplot
 from scipy import sparse
 from scipy.sparse import linalg
 from .BarLinearElastic import BarLinearElastic
@@ -36,7 +35,7 @@ class TrussStructure:
         self.nz = nz
         self.fixed_nodes = fixed_nodes
         self.design_edges = design_edges
-        self.design_edges_set = {(min(e[0], e[1]), max(e[0], e[1])) for e in design_edges}
+        self.design_edges_set = {(min(e[0], e[1]), max(e[0], e[1])) for e in design_edges} # the order changed
         self.bar_discretization = 10
 
         #consider self weight
@@ -157,7 +156,7 @@ class TrussStructure:
 
         # 4. Add any additional design edges if not already present
         existing_edges_set = set(self.edges)
-        for e in self.design_edges_set:
+        for e in self.design_edges:
             if e not in existing_edges_set:
                 self.edges.append(e)
 
@@ -419,35 +418,53 @@ class TrussStructure:
                 Fs.append(F)
         return Vs, Fs
 
+    # Modified methods for TrussStructure class
+
     def get_deformed_bar_geometry(self, displacement: np.ndarray) -> Tuple[List[np.ndarray], List[np.ndarray]]:
         """Return the deformed 3D mesh of each designed bar."""
         Vs, Fs = [], []
-        for bar_id, edge in enumerate(self.edges):
+        design_bar_indices = []
+
+        # First, identify which bars are part of the design
+        for i, edge in enumerate(self.edges):
             edge_norm = (min(edge[0], edge[1]), max(edge[0], edge[1]))
             if edge_norm in self.design_edges_set:
-                segments, _ = self.visualize_displacement(bar_id, displacement)
-                for i in range(self.bar_discretization):
-                    end_u, end_v = segments[i], segments[i + 1]
-                    cross_section = self.bars[bar_id].section_
-                    bar = Bar.from_points(end_u, end_v, cross_section)
-                    V, F = bar.get_mesh()
-                    Vs.append(V)
-                    Fs.append(F)
+                design_bar_indices.append(i)
+
+        # Then process only those bars
+        for bar_idx in design_bar_indices:
+            edge = self.edges[bar_idx]
+            segments, _ = self.visualize_displacement(bar_idx, displacement)
+            for i in range(self.bar_discretization):
+                end_u, end_v = segments[i], segments[i + 1]
+                cross_section = self.bars[bar_idx].section_
+                bar = Bar.from_points(end_u, end_v, cross_section)
+                V, F = bar.get_mesh()
+                Vs.append(V)
+                Fs.append(F)
+
         return Vs, Fs
 
     def get_deformed_bar_displacement_colors(self, displacement: np.ndarray, max_disp: float) -> List[np.ndarray]:
-        """Get colors based on deformation."""
+        """Get colors based on deformation, one color per bar segment."""
         colors = []
-        segments, deviations = self.visualize_displacement_all(displacement)
+        design_bar_indices = []
 
-        for bar_id, bar_deviations in enumerate(deviations):
-            edge_norm = (min(self.edges[bar_id][0], self.edges[bar_id][1]),
-                         max(self.edges[bar_id][0], self.edges[bar_id][1]))
+        # First, identify which bars are part of the design
+        for i, edge in enumerate(self.edges):
+            edge_norm = (min(edge[0], edge[1]), max(edge[0], edge[1]))
             if edge_norm in self.design_edges_set:
-                for j in range(self.bar_discretization):
-                    dev = (bar_deviations[j] + bar_deviations[j+1])/2.0
-                    color = jetmap(dev, 0, max_disp)
-                    colors.append(color)
+                design_bar_indices.append(i)
+
+        # Then process only those bars, creating colors for each segment
+        for bar_idx in design_bar_indices:
+            _, deviations = self.visualize_displacement(bar_idx, displacement)
+
+            # Create a color for each segment of this bar
+            for j in range(self.bar_discretization):
+                dev = (deviations[j] + deviations[j + 1]) / 2.0
+                color = jetmap(dev, 0, max_disp)
+                colors.append(color)
 
         return colors
 
@@ -554,8 +571,12 @@ class TrussStructure:
             # If the bar is a designed bar (in the design edges set), update its cross-sectional area
             if (min(edge[0], edge[1]), max(edge[0], edge[1])) in self.design_edges_set:
                 # Update the area based on rho, using the default design area
-                new_area = self.design_area * rho[i]  # Scale area by rho
-                section = BarCrossSectionRound(radius=np.sqrt(new_area / np.pi))
+                if(rho[i]>1e-6):
+                    new_area = self.design_area * rho[i]  # Scale area by rho
+                    section = BarCrossSectionRound(radius=np.sqrt(new_area / np.pi))
+                else:
+                    new_area = self.min_section.Ax_  # Unchanged for undesigned bars
+                    section = self.min_section
             else:
                 # For undesigned bars, keep the original area (using the minimum section)
                 new_area = self.min_section.Ax_  # Unchanged for undesigned bars
